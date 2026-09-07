@@ -1,0 +1,8 @@
+{
+  "rules": [
+    "acidic Boc removal",
+    "hydrogenolytic Cbz removal",
+    "basic Fmoc removal",
+    "fluoride/acid silyl deprotection"
+  ]
+}

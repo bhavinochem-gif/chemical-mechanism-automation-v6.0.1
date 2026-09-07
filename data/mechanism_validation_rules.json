@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "atom balance",
+    "charge balance",
+    "valence",
+    "leaving-group plausibility",
+    "proton transfer",
+    "electron flow"
+  ]
+}

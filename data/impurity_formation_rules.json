@@ -1,0 +1,10 @@
+{
+  "rules": [
+    "overreaction",
+    "hydrolysis",
+    "oxidation",
+    "epimerization",
+    "dehalogenation",
+    "solvolysis"
+  ]
+}

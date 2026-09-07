@@ -1,0 +1,10 @@
+{
+  "operations": [
+    "controlled addition",
+    "temperature hold",
+    "pH adjustment",
+    "seeded crystallization",
+    "solvent exchange",
+    "vacuum drying"
+  ]
+}

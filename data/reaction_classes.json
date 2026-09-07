@@ -1,0 +1,62 @@
+{
+  "classes": [
+    {
+      "name": "Cross-coupling",
+      "keywords": [
+        "coupling",
+        "suzuki",
+        "buchwald",
+        "heck",
+        "sonogashira",
+        "negishi"
+      ]
+    },
+    {
+      "name": "Substitution",
+      "keywords": [
+        "substitution",
+        "sn1",
+        "sn2",
+        "alkylation"
+      ]
+    },
+    {
+      "name": "Oxidation",
+      "keywords": [
+        "oxidation"
+      ]
+    },
+    {
+      "name": "Reduction",
+      "keywords": [
+        "reduction",
+        "hydrogenation"
+      ]
+    },
+    {
+      "name": "Carbonyl chemistry",
+      "keywords": [
+        "carbonyl",
+        "aldol",
+        "esterification",
+        "amide"
+      ]
+    },
+    {
+      "name": "Protection/deprotection",
+      "keywords": [
+        "protection",
+        "deprotection",
+        "boc",
+        "cbz",
+        "fmoc"
+      ]
+    },
+    {
+      "name": "Elimination",
+      "keywords": [
+        "elimination"
+      ]
+    }
+  ]
+}

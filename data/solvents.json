@@ -1,0 +1,14 @@
+{
+  "solvents": [
+    "THF",
+    "2-MeTHF",
+    "1,4-dioxane",
+    "DMF",
+    "DMSO",
+    "EtOAc",
+    "DCM",
+    "MeOH",
+    "EtOH",
+    "water"
+  ]
+}

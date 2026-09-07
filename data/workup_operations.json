@@ -1,0 +1,10 @@
+{
+  "operations": [
+    "quench",
+    "extraction",
+    "wash",
+    "drying",
+    "filtration",
+    "phase separation"
+  ]
+}
