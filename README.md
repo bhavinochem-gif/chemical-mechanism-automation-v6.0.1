@@ -1,10 +1,10 @@
-# Chemical Reaction Mechanism Automation V6.0.1
+# Chemical Reaction Mechanism Automation V6.0.2
+This build removes `st.pdf()` and uses a base64 HTML iframe, avoiding the Streamlit Cloud PDF-element exception.
 
-Upload a synthesis route PDF/image, review the extracted ROS, then run chemistry knowledge-base matching and mechanism analysis.
+Workflow: PDF → text extraction + PNG page rendering → AI/vision analysis → editable ROS → chemistry knowledge base → mechanism candidates → JSON/PDF reports.
 
-## Run
-pip install -r requirements.txt
-streamlit run app.py
+Run:
+`pip install -r requirements.txt`
+`streamlit run app.py`
 
-The JSON databases are a modular starter knowledge base, not an exhaustive list of chemistry.
-Mechanism results require expert/experimental verification.
+Set provider API keys in Streamlit Cloud App Settings → Secrets. Do not commit real keys.
