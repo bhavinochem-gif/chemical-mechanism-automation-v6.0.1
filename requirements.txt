@@ -1,8 +1,1 @@
-streamlit>=1.40,<2
-google-genai>=2.3.0,<3
-openai>=1.60,<2
-Pillow>=10,<12
-PyMuPDF>=1.24,<2
-rdkit>=2024.9.1
-reportlab>=4.2,<5
-pandas>=2.2,<3
+streamlit>=1.40,<2\ngoogle-genai>=2.3.0,<3\nopenai>=1.60,<2\nPillow>=10,<12\nPyMuPDF>=1.24,<2\nrdkit>=2024.9.1\nreportlab>=4.2,<5\npandas>=2.2,<3\n
