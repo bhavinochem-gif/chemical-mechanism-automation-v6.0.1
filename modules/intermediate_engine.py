@@ -1,0 +1,1 @@
+def generate_intermediates(rc,flows,row):return[{"intermediate":i+1,"description":f"Candidate intermediate associated with {x['type']}.","status":"candidate"} for i,x in enumerate(flows)]
