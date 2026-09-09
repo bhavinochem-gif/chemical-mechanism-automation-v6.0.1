@@ -1,1 +1,1 @@
-streamlit>=1.40,<2\ngoogle-genai>=2.3.0,<3\nopenai>=1.60,<2\nPillow>=10,<12\nPyMuPDF>=1.24,<2\nrdkit>=2024.9.1\nreportlab>=4.2,<5\npandas>=2.2,<3\n
+streamlit>=1.40,<2\ngoogle-genai>=2.3.0,<3\nopenai>=1.60,<2\nPillow>=10,<12\nPyMuPDF>=1.26,<1.29\nrdkit>=2024.9.1\nreportlab>=4.2,<5\npandas>=2.2,<3\n
