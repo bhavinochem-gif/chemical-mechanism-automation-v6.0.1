@@ -1,21 +1,24 @@
-# Chemical Reaction Mechanism Automation V6.1
+# Chemical Reaction Mechanism Automation V6.2
 
-V6.1 is a structure-aware upgrade targeted at the supplied Scheme 1 test route.
+V6.2 focuses on **graphical chemical structure → validated molecular graph** conversion.
 
-## Uploaded-route resolver
-The test scheme contains a TIPS-protected fused ketone, 1-bromo-2,3-difluorobenzene, toluene, palladium acetate, tri-tert-butylphosphonium tetrafluoroborate and sodium tert-butoxide. V6.1 recognizes this signature before generic AI analysis and returns a conservative mechanism interpretation as **Pd-catalyzed ketone alpha-arylation**.
+## Main upgrades
+- High-resolution PDF/image rendering
+- Structure-focused page crops
+- Vision-AI structure recognition with SMILES output
+- RDKit validation and canonical/isomeric SMILES normalization
+- Editable molecular-graph workbench
+- MCS-based atom mapping
+- Reaction-center bond-change detection
+- Existing V6.1 route-signature resolver for the supplied Pd alpha-arylation test route
+- Mechanism/electron-flow/intermediate analysis
+- JSON/PDF reports
+- Cloud-safe PDF iframe viewer
 
-## Mechanism generated for the test route
-1. NaOtBu generates the ketone enolate.
-2. Pd(OAc)2/tri-tert-butylphosphonium ligand generates the active Pd catalyst.
-3. Pd(0) oxidative addition into aryl C-Br.
-4. Enolate enters the Pd catalytic cycle.
-5. Reductive elimination forms the alpha-C–aryl C-C bond.
-6. Pd catalyst is regenerated.
-
-Exact large-substrate SMILES and absolute stereochemistry are intentionally not fabricated. The app flags those as requiring structure OCR/manual confirmation.
+## Important
+The application never silently converts an uncertain drawing into an invented molecular graph. When vision recognition is uncertain, the SMILES remains blank and the UI provides a manual exact-SMILES confirmation route.
 
 ## Streamlit Cloud
 Main file: `app.py`
 
-`requirements.txt` uses real line breaks. PyMuPDF is imported as `pymupdf`.
+Add `GEMINI_API_KEY` to Streamlit secrets for Gemini vision structure recognition.
