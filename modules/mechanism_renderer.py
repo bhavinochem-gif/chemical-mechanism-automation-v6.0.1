@@ -1,1 +1,0 @@
-def render_mechanism_png(mech):return None
