@@ -58,11 +58,39 @@ if signature:
       {"role":"aryl_halide","name":"1-bromo-2,3-difluorobenzene","smiles":"Fc1cccc(Br)c1F","confidence":0.97,"validation":validate_smiles("Fc1cccc(Br)c1F")},
       {"role":"product","name":"alpha-(2,3-difluorophenyl) arylated TIPS-protected fused ketone","smiles":"","confidence":0.91,"uncertainties":["Exact molecular graph not generated from drawing."]}
     ]
+    # Normalize vision results defensively. Streamlit session state can contain
+    # legacy/list/string values after an app upgrade; never call .get() on an
+    # unknown object. Only dictionaries with a non-empty role are candidates.
+    normalized=[]
+    for item in all_structures:
+        if isinstance(item, dict):
+            normalized.append(item)
+        elif isinstance(item, list):
+            normalized.extend(x for x in item if isinstance(x, dict))
+    all_structures=normalized
+
     # Replace only slots for which vision AI returned a validated SMILES.
-    byrole={s.get("role"):s for s in all_structures if s.get("smiles") and s.get("validation",{}).get("valid")}
-    for s in known:
-        if s["role"] in byrole: s.update(byrole[s["role"]])
-    all_structures=known+ [s for s in all_structures if s.get("role") not in {"substrate","aryl_halide","product"}]
+    byrole={}
+    for item in all_structures:
+        role=str(item.get("role","") or "").strip().lower()
+        smiles=str(item.get("smiles","") or "").strip()
+        validation=item.get("validation") if isinstance(item.get("validation"),dict) else {}
+        # Re-validate here because older session-state results may not contain
+        # the validation field.
+        if smiles:
+            validation=validate_smiles(smiles)
+            item["validation"]=validation
+            if validation.get("valid"):
+                item["smiles"]=validation.get("smiles",smiles)
+                byrole[role]=item
+    for item in known:
+        role=item["role"]
+        if role in byrole:
+            item.update(byrole[role])
+    all_structures=known + [
+        item for item in all_structures
+        if str(item.get("role","") or "").strip().lower() not in {"substrate","aryl_halide","product"}
+    ]
 
 if all_structures:
     st.subheader("2. Validated molecular graphs")
