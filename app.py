@@ -12,16 +12,16 @@ from modules.reaction_classifier import classify_reaction
 from modules.mechanism_engine import MechanismEngine
 from modules.report_generator import make_pdf_report
 from modules.route_signature import match_uploaded_route
-from modules.mechanism_renderer import render_structure, simple_mechanism_cards
+from modules.mechanism_renderer import render_structure, simple_mechanism_cards, drawing_backend
 
-st.set_page_config(page_title="Chemical Reaction Mechanism Automation V6.2.1", layout="wide")
+st.set_page_config(page_title="Chemical Reaction Mechanism Automation V6.2.2", layout="wide")
 
 @st.cache_resource
 def db():
     return ChemistryDatabase("data")
 
 D = db()
-st.title("🧪 Chemical Reaction Mechanism Automation — V6.2.1")
+st.title("🧪 Chemical Reaction Mechanism Automation — V6.2.2")
 st.caption("Graphical scheme → chemical structures → molecular graphs → reaction center → visual mechanism")
 
 with st.sidebar:
@@ -29,6 +29,7 @@ with st.sidebar:
     use_ai = st.checkbox("Use AI structure recognition", True)
     dpi = st.slider("PDF rendering DPI", 180, 420, 320, 10)
     st.write("Knowledge-base files:", len(D.files))
+    st.caption(f"Structure renderer: {drawing_backend()}")
 
 up = st.file_uploader("Upload synthesis route PDF or image", type=["pdf", "png", "jpg", "jpeg"])
 if not up:
@@ -128,7 +129,7 @@ if all_structures:
         if smi:
             img = render_structure(smi)
             if img is not None:
-                st.image(img, caption=f"Validated {row.get('Role','structure')} structure", width=500)
+                st.image(img, caption=f"Validated {row.get('Role','structure')} molecular structure", width=500)
 else:
     checked = None
 
@@ -189,5 +190,5 @@ report = {
 }
 
 st.subheader("7. Downloadable reports")
-st.download_button("Download JSON report", json.dumps(report, indent=2, default=str), "mechanism_report_v6.2.1.json", "application/json")
-st.download_button("Download PDF report", make_pdf_report(report), "mechanism_report_v6.2.1.pdf", "application/pdf")
+st.download_button("Download JSON report", json.dumps(report, indent=2, default=str), "mechanism_report_v6.2.2.json", "application/json")
+st.download_button("Download PDF report", make_pdf_report(report), "mechanism_report_v6.2.2.pdf", "application/pdf")
