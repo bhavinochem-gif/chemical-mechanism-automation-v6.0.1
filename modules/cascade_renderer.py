@@ -1,1 +1,0 @@
-def build_cascade(ms):return[{"step":m.get("step"),"reaction":m.get("reaction"),"confidence":m.get("confidence")} for m in ms]
