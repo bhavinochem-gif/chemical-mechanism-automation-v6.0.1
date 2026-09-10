@@ -1,1 +1,0 @@
-def detect_scheme_regions(image):return[{"x":0,"y":0,"width":image.width,"height":image.height,"confidence":.25}]
