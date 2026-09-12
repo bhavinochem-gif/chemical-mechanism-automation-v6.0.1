@@ -1,27 +1,72 @@
-# Chemical Reaction Mechanism Automation V6.5
+# Chemical Reaction Mechanism Automation V6.6
 
-**V6.5 = Advanced OCSR + Structure Verification Engine + Graphical Mechanism Engine**
+## Reaction Drawing Workspace + Direct Molecular Graph Automation
 
-The application accepts reaction/synthesis schemes as PDF, PNG, JPG or JPEG. It independently interprets each upload, detects individual molecular drawings, generates and verifies OCSR candidates, validates molecular graphs with RDKit, detects reaction centers, classifies the transformation, and renders a graphical mechanism pathway when the required structures are confirmed.
+V6.6 changes the preferred input from image recognition to **explicit chemical graphs**.
 
-## Why V6.5
+### Preferred V6.6 flow
 
-Previous versions could correctly describe a reaction while failing to recover the exact molecular graph from a complex scheme. V6.5 does not use RDKit as an optical recognizer. It separates the workflow into:
+```text
+Draw molecule / paste SMILES / load RXN
+            ↓
+Exact molecular graph
+            ↓
+RDKit sanitization
+            ↓
+Reactant ↔ product atom mapping
+            ↓
+Bond-change / reaction-center detection
+            ↓
+Reaction classification
+            ↓
+Named-reaction / mechanism knowledge base
+            ↓
+Intermediate generation
+            ↓
+Graphical mechanism pathway
+            ↓
+JSON / RXN export
+```
 
-`scheme image → structure detection → isolated OCSR → candidate SMILES → RDKit validation → image-vs-render verification → user confirmation → atom mapping → mechanism`
+Image/PDF OCSR is still included as a legacy page for literature and patent schemes.
 
-## Setup
+## Input modes
 
-1. Upload this repository to GitHub.
-2. Deploy `app.py` with Streamlit Cloud.
-3. Keep Python 3.12 (`runtime.txt` and `.python-version` are included).
-4. Add at least one vision-capable AI provider in Streamlit Secrets. Gemini is the primary tested OCSR path.
+1. **Draw single reaction**
+   - 1–4 reactants
+   - 1–3 products
+   - reagent / catalyst / solvent / temperature / time / atmosphere fields
+   - direct mechanism analysis
 
-Example `.streamlit/secrets.toml` entries are already provided. Put your own API keys in Streamlit Cloud Secrets rather than committing live keys.
+2. **Build multi-step route**
+   - add route steps sequentially
+   - previous product can seed the next starting material
+   - analyze the entire route
+   - export route JSON
 
-## Notes
+3. **Paste Reaction SMILES / load RXN**
+   - expert-mode direct graph input
+   - bypasses all OCSR
 
-- V6.5 generates several candidates rather than forcing one structure.
-- A chemically valid SMILES is not automatically considered visually correct.
-- Low-confidence structures require confirmation.
-- The graphical mechanism engine only becomes exact when reactant and product molecular graphs are confirmed.
+4. **Legacy PDF/Image OCSR**
+   - V6.5 Advanced OCSR retained under `pages/4_Legacy_PDF_Image_OCSR.py`
+
+## Drawing engine
+
+V6.6 prefers `streamlit-chem` (Ketcher-backed `st.chem_draw`) and includes
+`streamlit-ketcher` as a fallback. A direct SMILES field is always available.
+
+The drawing tool bypasses optical structure recognition, but RDKit validation is
+still retained to check graph/valence/sanitization quality.
+
+## Deployment
+
+- Python: **3.12**
+- Main entry: `app.py`
+- Streamlit Cloud: point the app to the repository root and `app.py`.
+
+## Important design principle
+
+**OCSR is no longer required for normal use.** It is only a compatibility path
+for existing PDFs/images. Exact drawings and direct molecular formats are the
+recommended inputs for mechanism automation.
