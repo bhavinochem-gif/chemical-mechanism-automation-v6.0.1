@@ -1,362 +1,331 @@
-import hashlib, json
-import pandas as pd
+import json
 import streamlit as st
 
-from modules.pdf_processor import process_document
-from modules.ai_router import AIAnalyzer
-from modules.ros_engine import build_ros
 from modules.database_manager import ChemistryDatabase
-from modules.scheme_structure_detector import detect_structure_regions
-from modules.advanced_ocrs import recognize_candidates
-from modules.smiles_verifier import validate_candidate
-from modules.reaction_center import analyze_reaction_center
-from modules.reaction_classifier import classify_reaction
-from modules.mechanism_engine import MechanismEngine
-from modules.report_generator import make_pdf_report
-from modules.mechanism_renderer import render_structure, cards_from_mechanism, drawing_backend
-from modules.intermediate_structure_generator import generate_intermediate_structures
+from modules.drawing_workspace import draw_structure, editor_backend
+from modules.direct_graph_engine import molecular_graph, validate_structure
+from modules.reaction_step_model import ReactionStep
+from modules.route_builder import validate_route, suggested_next_substrate
+from modules.direct_reaction_analyzer import analyze_direct_step
 from modules.mechanism_path_renderer import render_mechanism_pathway
+from modules.mechanism_renderer import cards_from_mechanism, render_structure
 from modules.reaction_center_visualizer import reaction_center_images
-from modules.pairwise_structure_verifier import scaffold_conservation
+from modules.reaction_input_adapter import parse_reaction_smiles, parse_rxn_block
+from modules.reaction_export import reaction_to_rxn_block
 
-st.set_page_config(page_title="Chemical Reaction Mechanism Automation V6.5", layout="wide")
-
-@st.cache_resource
-def db():
-    return ChemistryDatabase("data")
-
-D = db()
-
-st.title("🧪 Chemical Reaction Mechanism Automation — V6.5")
-st.caption("Advanced OCSR + Structure Verification Engine + V6.4 Graphical Mechanism Engine. Every uploaded ROS is analyzed independently.")
-
-with st.sidebar:
-    provider = st.selectbox("AI / vision provider", ["gemini", "openrouter", "groq", "ollama", "openai"])
-    use_ai = st.checkbox("Use AI route + OCSR recognition", True)
-    dpi = st.slider("PDF rendering DPI", 200, 480, 360, 20)
-    auto_threshold = st.slider("OCSR auto-accept threshold", 0.70, 0.95, 0.78, 0.01)
-    st.caption(f"Structure renderer: {drawing_backend()}")
-    st.caption(f"Knowledge-base files: {len(D.files)}")
-
-up = st.file_uploader("Upload a synthesis route (ROS) PDF or image", type=["pdf", "png", "jpg", "jpeg"])
-if not up:
-    st.info("Upload a reaction/synthesis scheme to begin.")
-    st.stop()
-
-raw = up.getvalue()
-file_hash = hashlib.sha256(raw).hexdigest()[:20]
-
-# Clear all OCSR/analysis choices when a different file is uploaded.
-if st.session_state.get("active_file_hash") != file_hash:
-    for k in list(st.session_state.keys()):
-        if k.startswith(("ocrs_", "region_", "selected_", "manual_", "ros_", "analysis_", "confirm_", "role_")) or k in {"analysis_cache", "checked_cache"}:
-            del st.session_state[k]
-    st.session_state["active_file_hash"] = file_hash
-
-pages, text = process_document(raw, up.name, dpi)
-
-st.subheader("1. Uploaded ROS")
-if up.name.lower().endswith(".pdf"):
-    st.download_button("Download original PDF", raw, file_name=up.name, mime="application/pdf")
-for i, p in enumerate(pages):
-    st.image(p, caption=f"ROS page {i+1}", use_container_width=True)
-
-with st.expander("Extracted text"):
-    st.text_area("Text", text or "No selectable text found.", height=160)
-
-st.subheader("2. Independent reaction interpretation")
-analysis_key = f"analysis_{file_hash}_{provider}_{int(use_ai)}"
-if analysis_key not in st.session_state:
-    with st.spinner("Analyzing this ROS independently..."):
-        st.session_state[analysis_key] = AIAnalyzer(provider, use_ai).analyze_route(text, pages)
-analysis = st.session_state[analysis_key]
-
-st.markdown("### Reaction summary")
-st.write(analysis.get("route_summary", "Reaction interpretation requires verification."))
-steps = analysis.get("steps", []) if isinstance(analysis, dict) else []
-for s in steps:
-    cols = st.columns(4)
-    mats = s.get("starting_materials", []) or []
-    with cols[0]:
-        st.markdown("**Starting material(s)**")
-        st.write("; ".join((x.get("name") or x.get("smiles") or "Unrecognized") for x in mats) or "Unrecognized")
-    with cols[1]:
-        st.markdown("**Reagents / catalysts**")
-        st.write(", ".join((s.get("reagents", []) or []) + (s.get("catalysts", []) or [])) or "Not recognized")
-    with cols[2]:
-        st.markdown("**Product**")
-        p = s.get("product", {}) or {}
-        st.write(p.get("name") or p.get("smiles") or "Unrecognized")
-    with cols[3]:
-        st.markdown("**Proposed reaction**")
-        st.write(s.get("reaction") or s.get("reaction_class") or "Unclassified transformation")
-
-st.subheader("3. Advanced OCSR — structure-by-structure")
-st.caption(
-    "V6.5 first detects each molecular drawing, then performs OCSR on that isolated crop. "
-    "Each candidate must pass RDKit validation and image-vs-render verification before auto-acceptance."
+st.set_page_config(
+    page_title="Chemical Reaction Mechanism Automation V6.6",
+    layout="wide",
 )
 
-selected_structures = []
-region_records = []
+@st.cache_resource
+def chemistry_db():
+    return ChemistryDatabase("data")
 
-for pi, page in enumerate(pages):
-    detect_key = f"region_{file_hash}_{pi}"
-    if detect_key not in st.session_state:
-        with st.spinner(f"Detecting molecular drawings on page {pi+1}..."):
-            st.session_state[detect_key] = detect_structure_regions(page, provider, use_ai)
-    regions = st.session_state.get(detect_key, []) or []
+D = chemistry_db()
 
-    st.markdown(f"### Page {pi+1}: detected molecular drawings")
-    if not regions:
-        st.warning("No structure regions detected on this page.")
-        continue
+def conditions_ui(prefix: str):
+    c1, c2 = st.columns(2)
+    with c1:
+        reagents = st.text_input("Reagents / bases", key=f"{prefix}_reagents")
+        catalysts = st.text_input("Catalysts / ligands", key=f"{prefix}_catalysts")
+        solvents = st.text_input("Solvent(s)", key=f"{prefix}_solvents")
+    with c2:
+        temperature = st.text_input("Temperature", key=f"{prefix}_temperature")
+        time = st.text_input("Time", key=f"{prefix}_time")
+        atmosphere = st.text_input("Atmosphere", key=f"{prefix}_atmosphere")
+    return {
+        "reagents": reagents,
+        "catalysts": catalysts,
+        "solvents": solvents,
+        "temperature": temperature,
+        "time": time,
+        "atmosphere": atmosphere,
+    }
 
-    for ri, region in enumerate(regions):
-        detected_role = str(region.get("role", "unknown") or "unknown")
-        label = str(region.get("label", f"structure {ri+1}"))
-        crop = region.get("image")
-        key = f"ocrs_{file_hash}_{pi}_{ri}"
-        role_options = ["reactant", "reagent_structure", "product", "unknown"]
-        default_role_idx = role_options.index(detected_role) if detected_role in role_options else 3
-        role = st.selectbox(
-            f"Role for {label}", role_options, index=default_role_idx,
-            key=f"role_{file_hash}_{pi}_{ri}",
-            help="Correct the page-layout role if automatic structure detection assigned it incorrectly.",
-        )
+def show_analysis(step: ReactionStep, result: dict, prefix: str):
+    cls = result.get("classification", {})
+    center = result.get("reaction_center", {})
+    mech = result.get("mechanism", {})
 
-        st.markdown(f"#### {label} — role: `{role}`")
-        c1, c2 = st.columns([1, 1.45])
-        with c1:
-            if crop is not None:
-                st.image(crop, caption=f"Isolated crop • source: {region.get('source','')}", use_container_width=True)
-            st.caption(f"Region confidence: {float(region.get('confidence',0) or 0):.0%}")
-            if st.button("Run Advanced OCSR", key="btn_" + key, use_container_width=True):
-                with st.spinner("Generating, validating, and visually verifying structure candidates..."):
-                    st.session_state[key] = recognize_candidates(crop, role, provider, use_ai, accept_threshold=auto_threshold)
+    st.markdown("### Reaction interpretation")
+    a, b, c = st.columns(3)
+    a.metric("Reaction class", cls.get("reaction_class", "Unclassified"))
+    b.metric("Confidence", f"{float(cls.get('confidence', 0) or 0):.0%}")
+    c.metric("Bond changes", len(center.get("bond_changes", []) or []))
 
-        with c2:
-            result = st.session_state.get(key)
-            if not isinstance(result, dict):
-                st.info("Run Advanced OCSR for this structure crop.")
-                continue
+    if cls.get("evidence"):
+        st.caption("Evidence: " + "; ".join(map(str, cls.get("evidence", []))))
 
-            if result.get("error"):
-                st.error(result["error"])
-            if result.get("visible_features"):
-                st.write("**Visible features:** " + "; ".join(map(str, result.get("visible_features", []))))
-            if result.get("global_uncertainties"):
-                st.caption("Uncertainties: " + "; ".join(map(str, result.get("global_uncertainties", []))))
-
-            candidates = result.get("candidates", []) or []
-            if not candidates:
-                st.warning("No defensible molecular-graph candidate was produced. Use manual SMILES/molfile confirmation instead of forcing a structure.")
-                continue
-
-            rows = []
-            for idx, cand in enumerate(candidates):
-                ver = cand.get("verification", {}) or {}
-                rows.append({
-                    "#": idx + 1,
-                    "Valid": bool(cand.get("valid")),
-                    "OCSR confidence": round(float(cand.get("confidence",0) or 0), 3),
-                    "Image match": round(float(ver.get("match_score",0) or 0), 3),
-                    "Combined score": round(float(cand.get("score",0) or 0), 3),
-                    "SMILES": cand.get("canonical_smiles") or cand.get("smiles") or "",
-                    "Verdict": ver.get("verdict", "unverified"),
-                })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-            default_idx = 0
-            auto = result.get("accepted")
-            if auto:
-                for idx, cand in enumerate(candidates):
-                    if (cand.get("canonical_smiles") or "") == (auto.get("canonical_smiles") or ""):
-                        default_idx = idx
-                        break
-                st.success("Top candidate passed V6.5 auto-verification.")
-            else:
-                st.warning("Candidate requires user confirmation; V6.5 will not silently treat it as exact.")
-
-            chosen_idx = st.selectbox(
-                "Candidate to inspect / use",
-                options=list(range(len(candidates))),
-                index=default_idx,
-                format_func=lambda x: f"Candidate {x+1} • score {candidates[x].get('score',0):.2f}",
-                key=f"selected_{file_hash}_{pi}_{ri}",
-            )
-            chosen = candidates[int(chosen_idx)]
-            chosen_smiles = chosen.get("canonical_smiles") or ""
-
-            if chosen_smiles:
-                img = render_structure(chosen_smiles)
-                if img is not None:
-                    st.image(img, caption="Candidate rendered from validated molecular graph", width=620)
-                st.code(chosen_smiles, language=None)
-                ver = chosen.get("verification", {}) or {}
-                if ver.get("mismatches"):
-                    st.caption("Verifier mismatches: " + "; ".join(map(str, ver.get("mismatches", []))))
-
-            edit_key = f"manual_{file_hash}_{pi}_{ri}"
-            corrected = st.text_input(
-                "Confirmed / corrected SMILES",
-                value=chosen_smiles,
-                key=edit_key,
-                help="Edit only if you can confirm the molecular structure. RDKit validates the graph, not whether the drawing was read correctly.",
-            ).strip()
-            v = validate_candidate(corrected)
-            if corrected and v.get("valid"):
-                score = float(chosen.get("score",0) or 0)
-                auto_ok = auto is not None and corrected == chosen_smiles
-                edited_by_user = corrected != chosen_smiles
-                confirm_key = f"confirm_{file_hash}_{pi}_{ri}"
-                if auto_ok:
-                    user_ok = True
-                    st.success("Auto-verified structure accepted.")
-                else:
-                    user_ok = st.checkbox(
-                        "I confirm this molecular structure matches the uploaded drawing",
-                        key=confirm_key,
-                        value=False,
-                    )
-                st.success(f"RDKit valid • {v.get('formula','')} • {v.get('atoms',0)} atoms")
-                if auto_ok or user_ok:
-                    status = "user_confirmed" if (user_ok and not auto_ok) else "auto_verified"
-                    selected_structures.append({
-                        "page": pi+1,
-                        "region": ri+1,
-                        "role": role,
-                        "label": label,
-                        "name": result.get("name", ""),
-                        "smiles": v.get("canonical_smiles", ""),
-                        "valid": True,
-                        "ocrs_score": score,
-                        "verification_match": float(chosen.get("verification",{}).get("match_score",0) or 0),
-                        "status": status,
-                        "confirmed": True,
-                    })
-                else:
-                    st.info("Valid SMILES is shown for review but is not used in atom mapping until confirmed.")
-            elif corrected:
-                st.error("SMILES is not RDKit-valid. It will not be used for reaction-center analysis.")
-
-        region_records.append({
-            "page": pi+1,
-            "region": ri+1,
-            "role": role,
-            "label": label,
-            "box": region.get("box"),
-            "source": region.get("source"),
-            "ocrs": st.session_state.get(key),
-        })
-
-st.subheader("4. Structure verification workbench")
-if selected_structures:
-    verify_df = pd.DataFrame(selected_structures)
-    st.dataframe(verify_df, use_container_width=True, hide_index=True)
-else:
-    verify_df = pd.DataFrame()
-    st.info("No RDKit-valid OCSR structure has been selected yet.")
-
-# Choose primary substrate/product only from valid selected structures.
-reactants = [x for x in selected_structures if x.get("role") in {"reactant", "substrate", "starting_material"}]
-partner_structures = [x for x in selected_structures if x.get("role") == "reagent_structure"]
-products = [x for x in selected_structures if x.get("role") == "product"]
-main_scaffold_r = reactants[0]["smiles"] if reactants else ""
-reactant_side = [x["smiles"] for x in reactants + partner_structures if x.get("smiles")]
-main_r = ".".join(dict.fromkeys(reactant_side))
-main_p = products[0]["smiles"] if products else ""
-
-if main_scaffold_r and main_p:
-    pair = scaffold_conservation(main_scaffold_r, main_p)
-    st.markdown("### Reactant ↔ product scaffold verification")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("MCS atoms", pair.get("mcs_atoms", 0))
-    c2.metric("Scaffold conservation", f"{pair.get('score',0):.0%}")
-    c3.write(pair.get("interpretation", ""))
-    if pair.get("score", 0) < 0.40:
-        st.warning("Low scaffold conservation: inspect OCSR assignments before mechanism generation.")
-
-st.subheader("5. Manual exact-structure override")
-with st.expander("Enter main reactant/product SMILES when OCSR is incomplete"):
-    manual_r = st.text_input("Reactant side SMILES (dot-separated reactants allowed)", value=main_r, key="manual_main_r_" + file_hash).strip()
-    manual_p = st.text_input("Main product SMILES", value=main_p, key="manual_main_p_" + file_hash).strip()
-    vr = validate_candidate(manual_r) if manual_r else {"valid": False}
-    vp = validate_candidate(manual_p) if manual_p else {"valid": False}
-    if manual_r:
-        st.write("Reactant validation:", vr)
-    if manual_p:
-        st.write("Product validation:", vp)
-    if manual_r and not vr.get("valid"):
-        manual_r = ""
-    if manual_p and not vp.get("valid"):
-        manual_p = ""
-
-st.subheader("6. Reaction table + graphical mechanism")
-ros = st.data_editor(build_ros(analysis), use_container_width=True, num_rows="dynamic", key="ros_" + file_hash)
-mechanisms = []
-centers = []
-classifications = []
-
-for row in ros.to_dict("records"):
-    rs = manual_r or main_r
-    ps = manual_p or main_p
-    center = analyze_reaction_center(rs, ps) if rs and ps else {"status":"needs_structure_verification","bond_changes":[],"confidence":0.0}
-    classification = classify_reaction(center, row, D)
-    mech = MechanismEngine(D).analyze_step(row, center, classification)
-    centers.append(center); classifications.append(classification); mechanisms.append(mech)
-
-    st.markdown(f"### Step {row.get('Step','')} — {classification.get('reaction_class','Requires structure verification')}")
-    st.write(f"Confidence: {classification.get('confidence',0):.0%}")
-    if classification.get("evidence"):
-        st.caption("Evidence: " + "; ".join(map(str, classification["evidence"])))
     if center.get("status") != "ok":
-        st.warning("Exact reactant/product molecular graphs are not both confirmed. Detailed mechanism remains provisional.")
+        st.warning("Reaction-center mapping is incomplete. Review structures before accepting the mechanism.")
 
-    st.markdown("#### Graphical mechanism pathway")
-    nodes = generate_intermediate_structures(classification.get("reaction_class", ""), rs, ps, mech)
-    pathway = render_mechanism_pathway(nodes, classification.get("reaction_class", ""), center.get("bond_changes", []))
+    st.markdown("### Graphical mechanism pathway")
+    pathway = render_mechanism_pathway(
+        result.get("intermediates", []),
+        cls.get("reaction_class", ""),
+        center.get("bond_changes", []) or [],
+    )
     if pathway is not None:
         st.image(pathway, use_container_width=True)
     else:
-        st.info("Graphical pathway requires validated reactant/product structures.")
+        st.info("A graphical pathway could not be generated for this transformation yet.")
 
-    if rs or ps:
-        rcimgs = reaction_center_images(rs, ps, center)
-        if rcimgs.get("reactant") is not None or rcimgs.get("product") is not None:
-            with st.expander("Reaction-center highlighting"):
-                a,b = st.columns(2)
-                with a:
-                    if rcimgs.get("reactant") is not None:
-                        st.image(rcimgs["reactant"], caption="Reactant reaction center", use_container_width=True)
-                with b:
-                    if rcimgs.get("product") is not None:
-                        st.image(rcimgs["product"], caption="Product reaction center", use_container_width=True)
+    rc = reaction_center_images(step.reactant_smiles, step.product_smiles, center)
+    if rc.get("reactant") is not None or rc.get("product") is not None:
+        with st.expander("Reaction-center structures"):
+            x, y = st.columns(2)
+            with x:
+                if rc.get("reactant") is not None:
+                    st.image(rc["reactant"], caption="Reactant side", use_container_width=True)
+            with y:
+                if rc.get("product") is not None:
+                    st.image(rc["product"], caption="Product side", use_container_width=True)
 
-    st.markdown("#### Written mechanism")
-    for card in cards_from_mechanism(mech):
-        st.markdown(f"**{card['step']}. {card['title']}**")
-        st.write(card["description"])
-    if center.get("bond_changes"):
-        with st.expander("Detected bond changes / mapping evidence"):
-            st.json(center["bond_changes"])
+    st.markdown("### Written mechanism")
+    cards = cards_from_mechanism(mech)
+    if cards:
+        for card in cards:
+            st.markdown(f"**{card.get('step','')}. {card.get('title','Mechanism step')}**")
+            st.write(card.get("description", ""))
+    else:
+        st.info("No mechanism rules matched with enough confidence.")
 
-report = {
-    "version":"6.5",
-    "file_hash":file_hash,
-    "analysis":analysis,
-    "detected_structure_regions":region_records,
-    "selected_structures":selected_structures,
-    "main_reactant_smiles":manual_r or main_r,
-    "main_product_smiles":manual_p or main_p,
-    "ros":ros.to_dict("records"),
-    "reaction_centers":centers,
-    "classifications":classifications,
-    "mechanisms":mechanisms,
-    "knowledge_base_files":D.files,
-    "design":"advanced_ocrs_structure_verification_plus_graphical_mechanism_engine",
-}
+    with st.expander("Direct molecular graphs and atom/bond data"):
+        st.markdown("**Reactant molecular graph**")
+        st.json(molecular_graph(step.reactant_smiles))
+        st.markdown("**Product molecular graph**")
+        st.json(molecular_graph(step.product_smiles))
+        st.markdown("**Detected bond changes**")
+        st.json(center.get("bond_changes", []))
 
-st.subheader("7. Reports")
-st.download_button("Download JSON report", json.dumps(report, indent=2, default=str), "mechanism_report_v6.5.json", "application/json")
-st.download_button("Download PDF report", make_pdf_report(report), "mechanism_report_v6.5.pdf", "application/pdf")
+    payload = {
+        "version": "6.6",
+        "input_mode": "direct_molecular_graph",
+        "step": step.to_dict(),
+        "analysis": result,
+    }
+    st.download_button(
+        "Download step analysis JSON",
+        json.dumps(payload, indent=2, default=str),
+        file_name=f"v6.6_step_{step.step_no}_analysis.json",
+        mime="application/json",
+        key=f"{prefix}_download_json",
+    )
+    rxn_block = reaction_to_rxn_block(step)
+    if rxn_block:
+        st.download_button(
+            "Download RXN file",
+            rxn_block,
+            file_name=f"v6.6_step_{step.step_no}.rxn",
+            mime="chemical/x-mdl-rxnfile",
+            key=f"{prefix}_download_rxn",
+        )
+
+st.title("🧪 Chemical Reaction Mechanism Automation — V6.6")
+st.caption(
+    "Reaction Drawing Workspace + Direct Molecular Graph Automation. "
+    "Drawing/direct graph input bypasses OCSR and feeds exact molecular topology into the mechanism engine."
+)
+
+with st.sidebar:
+    st.markdown("### V6.6 status")
+    st.write(f"Drawing backend: **{editor_backend()}**")
+    st.write(f"Knowledge-base files: **{len(D.files)}**")
+    st.info(
+        "Preferred workflow: draw or paste exact structures. "
+        "PDF/image OCSR remains available as a legacy page when needed."
+    )
+
+tab1, tab2, tab3 = st.tabs([
+    "✏️ Draw single reaction",
+    "🧬 Build multi-step route",
+    "⌨️ Paste SMILES / RXN",
+])
+
+# ---------------- Single reaction ----------------
+with tab1:
+    st.subheader("Draw a reaction")
+    st.caption("Draw each molecule separately. Exact molecular graphs go directly to RDKit and reaction-center analysis.")
+
+    n_reactants = st.number_input("Number of reactant structures", 1, 4, 2, 1, key="single_n_r")
+    n_products = st.number_input("Number of product structures", 1, 3, 1, 1, key="single_n_p")
+
+    reactants = []
+    st.markdown("### Reactants")
+    for i in range(int(n_reactants)):
+        with st.expander(f"Reactant {i+1}", expanded=True):
+            item = draw_structure(f"Reactant {i+1}", f"single_r_{i}")
+            if item["valid"]:
+                reactants.append(item["smiles"])
+
+    products = []
+    st.markdown("### Products")
+    for i in range(int(n_products)):
+        with st.expander(f"Product {i+1}", expanded=True):
+            item = draw_structure(f"Product {i+1}", f"single_p_{i}")
+            if item["valid"]:
+                products.append(item["smiles"])
+
+    st.markdown("### Reaction conditions")
+    cond = conditions_ui("single")
+    notes = st.text_area("Notes", key="single_notes")
+
+    step = ReactionStep(
+        step_no=1,
+        reactants=reactants,
+        products=products,
+        reagents=cond["reagents"],
+        catalysts=cond["catalysts"],
+        solvents=cond["solvents"],
+        temperature=cond["temperature"],
+        time=cond["time"],
+        atmosphere=cond["atmosphere"],
+        notes=notes,
+    )
+
+    if st.button("Analyze drawn reaction", type="primary", use_container_width=True):
+        check = validate_route([step])
+        if not check["valid"]:
+            st.error("Draw/enter at least one valid reactant and one valid product before analysis.")
+        else:
+            st.session_state["single_analysis"] = analyze_direct_step(step, D)
+            st.session_state["single_step"] = step
+
+    if "single_analysis" in st.session_state and "single_step" in st.session_state:
+        show_analysis(st.session_state["single_step"], st.session_state["single_analysis"], "single")
+
+# ---------------- Multi-step route ----------------
+with tab2:
+    st.subheader("Multi-step synthesis route builder")
+    st.caption(
+        "Add one reaction step at a time. The previous product can automatically become the next step's starting material."
+    )
+
+    if "v66_route_steps" not in st.session_state:
+        st.session_state["v66_route_steps"] = []
+
+    route_steps = st.session_state["v66_route_steps"]
+    next_no = len(route_steps) + 1
+    suggested = suggested_next_substrate(route_steps)
+
+    st.markdown(f"### Add route step {next_no}")
+    main_sub = draw_structure("Main substrate", f"route_{next_no}_main", suggested)
+    partner = draw_structure("Reaction partner (optional)", f"route_{next_no}_partner", "")
+    product = draw_structure("Product", f"route_{next_no}_product", "")
+    cond = conditions_ui(f"route_{next_no}")
+    yld = st.text_input("Yield", key=f"route_{next_no}_yield")
+    notes = st.text_area("Step notes", key=f"route_{next_no}_notes")
+
+    if st.button(f"Add step {next_no} to route", use_container_width=True):
+        rs = []
+        if main_sub["valid"]:
+            rs.append(main_sub["smiles"])
+        if partner["valid"]:
+            rs.append(partner["smiles"])
+        ps = [product["smiles"]] if product["valid"] else []
+
+        new_step = ReactionStep(
+            step_no=next_no,
+            reactants=rs,
+            products=ps,
+            reagents=cond["reagents"],
+            catalysts=cond["catalysts"],
+            solvents=cond["solvents"],
+            temperature=cond["temperature"],
+            time=cond["time"],
+            atmosphere=cond["atmosphere"],
+            yield_text=yld,
+            notes=notes,
+        )
+        if validate_route([new_step])["valid"]:
+            st.session_state["v66_route_steps"].append(new_step)
+            st.success(f"Step {next_no} added.")
+            st.rerun()
+        else:
+            st.error("The step needs at least one valid reactant and one valid product.")
+
+    if route_steps:
+        st.markdown("### Current route")
+        for s in route_steps:
+            with st.expander(f"Step {s.step_no}: {s.reaction_smiles}", expanded=False):
+                st.write("Reagents:", s.reagents or "—")
+                st.write("Catalysts:", s.catalysts or "—")
+                st.write("Solvents:", s.solvents or "—")
+                st.code(s.reaction_smiles, language=None)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Analyze entire route", type="primary", use_container_width=True):
+                results = [analyze_direct_step(s, D) for s in route_steps]
+                st.session_state["v66_route_analysis"] = results
+        with c2:
+            if st.button("Clear route", use_container_width=True):
+                st.session_state["v66_route_steps"] = []
+                st.session_state.pop("v66_route_analysis", None)
+                st.rerun()
+
+        results = st.session_state.get("v66_route_analysis")
+        if results:
+            for s, r in zip(route_steps, results):
+                st.divider()
+                st.markdown(f"## Route step {s.step_no}")
+                show_analysis(s, r, f"route_result_{s.step_no}")
+
+            route_payload = {
+                "version": "6.6",
+                "input_mode": "multi_step_direct_molecular_graph",
+                "steps": [s.to_dict() for s in route_steps],
+                "analysis": results,
+            }
+            st.download_button(
+                "Download complete route JSON",
+                json.dumps(route_payload, indent=2, default=str),
+                file_name="v6.6_synthesis_route.json",
+                mime="application/json",
+            )
+
+# ---------------- SMILES / RXN ----------------
+with tab3:
+    st.subheader("Direct expert input")
+    mode = st.radio("Input format", ["Reaction SMILES", "RXN file"], horizontal=True)
+
+    parsed_step = None
+    if mode == "Reaction SMILES":
+        rxn_smi = st.text_area(
+            "Reaction SMILES",
+            placeholder="reactant1.reactant2>>product",
+            height=120,
+        )
+        if rxn_smi.strip():
+            try:
+                parsed_step = parse_reaction_smiles(rxn_smi)
+            except Exception as exc:
+                st.error(str(exc))
+    else:
+        rxn_file = st.file_uploader("Upload .rxn", type=["rxn"], key="rxn_upload")
+        if rxn_file is not None:
+            try:
+                parsed_step = parse_rxn_block(rxn_file.getvalue().decode("utf-8", errors="ignore"))
+            except Exception as exc:
+                st.error(str(exc))
+
+    if parsed_step is not None:
+        st.success("Reaction molecular graph parsed successfully.")
+        st.code(parsed_step.reaction_smiles, language=None)
+        if st.button("Analyze direct reaction input", type="primary", use_container_width=True):
+            st.session_state["direct_parsed_step"] = parsed_step
+            st.session_state["direct_parsed_analysis"] = analyze_direct_step(parsed_step, D)
+
+    if "direct_parsed_analysis" in st.session_state and "direct_parsed_step" in st.session_state:
+        show_analysis(
+            st.session_state["direct_parsed_step"],
+            st.session_state["direct_parsed_analysis"],
+            "direct",
+        )
+
+st.divider()
+st.caption(
+    "V6.6 keeps V6.5 Advanced OCSR as an optional Streamlit page for historical PDF/image schemes. "
+    "Use the drawing workspace whenever exact structures can be entered directly."
+)
