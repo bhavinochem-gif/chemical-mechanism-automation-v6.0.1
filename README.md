@@ -1,24 +1,15 @@
-# Chemical Reaction Mechanism Automation V6.2
+# Chemical Reaction Mechanism Automation V6.4
 
-V6.2 focuses on **graphical chemical structure → validated molecular graph** conversion.
+V6.4 is the general-ROS build. It fixes the major V6.2.x behavior where unrelated uploaded routes could inherit the same Pd alpha-arylation interpretation.
 
-## Main upgrades
-- High-resolution PDF/image rendering
-- Structure-focused page crops
-- Vision-AI structure recognition with SMILES output
-- RDKit validation and canonical/isomeric SMILES normalization
-- Editable molecular-graph workbench
-- MCS-based atom mapping
-- Reaction-center bond-change detection
-- Existing V6.1 route-signature resolver for the supplied Pd alpha-arylation test route
-- Mechanism/electron-flow/intermediate analysis
-- JSON/PDF reports
-- Cloud-safe PDF iframe viewer
+## Pipeline
 
-## Important
-The application never silently converts an uncertain drawing into an invented molecular graph. When vision recognition is uncertain, the SMILES remains blank and the UI provides a manual exact-SMILES confirmation route.
+Upload PDF/image → reset prior-upload state → full-route vision interpretation → candidate structure crops → structure recognition → RDKit SMILES validation → molecular graph → reactant/product atom mapping → reaction-center detection → reaction classification → named-reaction candidates → mechanism cards → report.
+
+## Important behavior
+
+The app does **not** assign a named reaction when evidence is insufficient. It returns `Requires structure verification` and asks for structure confirmation instead of inventing a mechanism.
 
 ## Streamlit Cloud
-Main file: `app.py`
 
-Add `GEMINI_API_KEY` to Streamlit secrets for Gemini vision structure recognition.
+Python 3.12 is pinned. Structure rendering tries RDKit `rdMolDraw2D` first and automatically falls back to the Pure-Pillow molecular-graph renderer if the drawing extension is unavailable.
