@@ -1,0 +1,23 @@
+{
+  "version": "6.6",
+  "name": "Reaction Drawing Workspace + Direct Molecular Graph Automation",
+  "primary_entry": "app.py",
+  "input_modes": [
+    "draw_single_reaction",
+    "multi_step_route_builder",
+    "reaction_smiles",
+    "rxn_file",
+    "legacy_pdf_image_ocrs"
+  ],
+  "new_modules": [
+    "modules/drawing_workspace.py",
+    "modules/direct_graph_engine.py",
+    "modules/reaction_step_model.py",
+    "modules/route_builder.py",
+    "modules/direct_reaction_analyzer.py",
+    "modules/reaction_input_adapter.py",
+    "modules/reaction_export.py"
+  ],
+  "legacy_page": "pages/4_Legacy_PDF_Image_OCSR.py",
+  "python": "3.12"
+}
