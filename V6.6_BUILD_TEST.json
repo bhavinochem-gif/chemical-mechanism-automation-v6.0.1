@@ -1,0 +1,10 @@
+{
+  "compile_ok": true,
+  "direct_graph_smoke_test": {
+    "skipped": false,
+    "valid": true,
+    "formula": "C6H3BrF2",
+    "atoms": 9,
+    "bonds": 9
+  }
+}
